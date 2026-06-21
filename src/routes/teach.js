@@ -33,7 +33,9 @@ Always structure responses as:
 
 router.post('/', async (req, res) => {
   try {
-    const { image_base64, audio_base64, message, session_id, context, user_email } = req.body;
+    const { image_base64, audio_base64, audio_format, analyze_audio, message, session_id, context, user_email } = req.body;
+    // Use audio-capable model when analyzing guitar playing
+    const model = analyze_audio ? 'gpt-4o-audio-preview' : 'gpt-4o';
 
     const messages = [{ role: 'system', content: SYSTEM_PROMPT }];
 
@@ -62,29 +64,39 @@ router.post('/', async (req, res) => {
     }
 
     if (audio_base64) {
-      // Transcribe audio first using Deepgram
-      try {
-        const audioBuffer = Buffer.from(audio_base64, 'base64');
-        const fetch = require('node-fetch');
-        
-        const dgResponse = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
-            'Content-Type': 'audio/webm',
+      if (analyze_audio) {
+        // Guitar playing analysis — send audio directly to GPT-4o Audio
+        // Use gpt-4o-audio-preview for this request
+        const audioFormat = audio_format || 'webm';
+        userContent.push({
+          type: 'input_audio',
+          input_audio: {
+            data: audio_base64.replace(/^data:[^;]+;base64,/, ''),
+            format: audioFormat,
           },
-          body: audioBuffer,
         });
-
-        if (dgResponse.ok) {
-          const dgData = await dgResponse.json();
-          const transcript = dgData?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
+      } else {
+        // Voice question — transcribe with Deepgram
+        try {
+          const audioBuffer = Buffer.from(audio_base64, 'base64');
+          const dgResponse = await axios.post(
+            'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true',
+            audioBuffer,
+            {
+              headers: {
+                'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
+                'Content-Type': 'audio/webm',
+              },
+              timeout: 15000,
+            }
+          );
+          const transcript = dgResponse.data?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
           if (transcript) {
             userContent.push({ type: 'text', text: `[Student said: "${transcript}"]` });
           }
+        } catch (e) {
+          console.error('Deepgram error:', e.message);
         }
-      } catch (e) {
-        console.error('Deepgram error:', e.message);
       }
     }
 
@@ -96,7 +108,7 @@ router.post('/', async (req, res) => {
 
     const completion = await axios.post(
       'https://api.openai.com/v1/chat/completions',
-      { model: 'gpt-4o', messages, max_tokens: 250, temperature: 0.7 },
+      { model, messages, max_tokens: 400, temperature: 0.7 },
       {
         headers: {
           'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,

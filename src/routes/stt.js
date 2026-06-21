@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const fetch = require('node-fetch');
-const FormData = require('form-data');
+const axios = require('axios');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
@@ -22,25 +21,20 @@ router.post('/', upload.single('audio'), async (req, res) => {
       return res.status(400).json({ error: 'No audio provided' });
     }
 
-    const response = await fetch(
+    const response = await axios.post(
       'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true',
+      audioBuffer,
       {
-        method: 'POST',
         headers: {
           'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
           'Content-Type': mimeType,
         },
-        body: audioBuffer,
+        timeout: 20000,
+        maxBodyLength: 25 * 1024 * 1024,
       }
     );
 
-    if (!response.ok) {
-      const err = await response.text();
-      console.error('[stt] Deepgram error:', err);
-      return res.status(response.status).json({ error: 'STT failed' });
-    }
-
-    const data = await response.json();
+    const data = response.data;
     const transcript = data?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
     const confidence = data?.results?.channels?.[0]?.alternatives?.[0]?.confidence || 0;
 

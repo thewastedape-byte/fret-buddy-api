@@ -68,8 +68,11 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🎸 Fret Buddy API running on port ${PORT}`);
 });
+
+// Extend timeout to 60s for OpenAI vision calls
+server.setTimeout(60000);
 
 module.exports = app;

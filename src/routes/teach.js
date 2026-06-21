@@ -29,7 +29,9 @@ Teaching style:
 Always structure responses as:
 1. What you observe (brief)
 2. Specific feedback or correction (main content)  
-3. One actionable tip to improve right now`;
+3. One actionable tip to improve right now
+
+IMPORTANT: No markdown formatting. No asterisks, no bold, no bullet dashes. Write in plain conversational sentences as if speaking aloud.`;
 
 router.post('/', async (req, res) => {
   try {

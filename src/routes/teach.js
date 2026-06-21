@@ -34,8 +34,7 @@ Always structure responses as:
 router.post('/', async (req, res) => {
   try {
     const { image_base64, audio_base64, audio_format, analyze_audio, message, session_id, context, user_email } = req.body;
-    // Use audio-capable model when analyzing guitar playing
-    const model = analyze_audio ? 'gpt-4o-audio-preview' : 'gpt-4o';
+    const model = 'gpt-4o';
 
     const messages = [{ role: 'system', content: SYSTEM_PROMPT }];
 
@@ -64,38 +63,43 @@ router.post('/', async (req, res) => {
     }
 
     if (audio_base64) {
-      if (analyze_audio) {
-        // Guitar playing analysis — send audio directly to GPT-4o Audio
-        // Use gpt-4o-audio-preview for this request
-        const audioFormat = audio_format || 'webm';
-        userContent.push({
-          type: 'input_audio',
-          input_audio: {
-            data: audio_base64.replace(/^data:[^;]+;base64,/, ''),
-            format: audioFormat,
-          },
-        });
-      } else {
-        // Voice question — transcribe with Deepgram
-        try {
-          const audioBuffer = Buffer.from(audio_base64, 'base64');
-          const dgResponse = await axios.post(
-            'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true',
-            audioBuffer,
-            {
-              headers: {
-                'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
-                'Content-Type': 'audio/webm',
-              },
-              timeout: 15000,
-            }
-          );
-          const transcript = dgResponse.data?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
-          if (transcript) {
-            userContent.push({ type: 'text', text: `[Student said: "${transcript}"]` });
+      // Transcribe audio via Whisper (works for both speech and guitar playing)
+      try {
+        const FormData = require('form-data');
+        const audioBuffer = Buffer.from(audio_base64.replace(/^data:[^;]+;base64,/, ''), 'base64');
+        const ext = (audio_format || 'webm').includes('mp4') ? 'mp4' : 'webm';
+        const form = new FormData();
+        form.append('file', audioBuffer, { filename: `audio.${ext}`, contentType: `audio/${ext}` });
+        form.append('model', 'whisper-1');
+        if (analyze_audio) {
+          form.append('prompt', 'Guitar playing, musical notes, chords, strumming patterns');
+        }
+        const whisperRes = await axios.post(
+          'https://api.openai.com/v1/audio/transcriptions',
+          form,
+          {
+            headers: {
+              'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+              ...form.getHeaders(),
+            },
+            timeout: 30000,
           }
-        } catch (e) {
-          console.error('Deepgram error:', e.message);
+        );
+        const transcript = whisperRes.data?.text || '';
+        if (analyze_audio) {
+          userContent.push({
+            type: 'text',
+            text: transcript
+              ? `[Student played guitar. Whisper heard: "${transcript}". Analyze their playing technique, timing, and any notes/chords detected. Give specific musical feedback.]`
+              : '[Student played guitar — no clear notes detected. Analyze their technique from the camera image and encourage them to keep practicing.]',
+          });
+        } else if (transcript) {
+          userContent.push({ type: 'text', text: `[Student said: "${transcript}"]` });
+        }
+      } catch (e) {
+        console.error('Whisper error:', e.message);
+        if (analyze_audio) {
+          userContent.push({ type: 'text', text: '[Student played guitar — analyze their technique from the camera image.]' });
         }
       }
     }

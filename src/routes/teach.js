@@ -136,7 +136,7 @@ router.post('/', async (req, res) => {
     res.json({
       response_text: responseText,
       session_id: session_id || uuidv4(),
-      tokens_used: completion.usage?.total_tokens || 0,
+      tokens_used: completion.data.usage?.total_tokens || 0,
     });
 
   } catch (err) {
